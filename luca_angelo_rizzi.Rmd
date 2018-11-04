@@ -1,0 +1,300 @@
+---
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Churn Prediction for a Bank
+
+
+## Aim of the project
+
+The aim of my project is to provide some consultancy to a bank, because they have noticed that a lot of customers are leaving the company. The first thing I saw in this company is that IT department is not very efficient and need a bit of restyling. 
+Nowadays it’s fundamental to manage relationships with the customers and have a market pull approach rather than a technology push, at least for a retail bank. Market pull → the need is identified by customers; Technology push → R&D drives the development of new products. This is done through Customer Relationship Management, which helps the company to ensure customer satisfaction. 
+This tool, if apply successfully, improve the retention power (the probability that a customer will not leave). This is particularly powerful because acquiring new customers is far more costly than satisfying and retaining existing customers. 
+The phenomenon related to the customers who leave the company it is commonly called customer churn. Typically, the customer churn rate is calculated as a relative number in percentage(churn rate) In particular, there are several reasons that lead to monitoring the churn rate.
+- marketing costs to acquire new customers are high;  
+- allows to calculate customer lifetime value;
+- it allows to see whether what the company is improving the customer churn.
+
+The process for identifying the churners (those who leave the company) is called customer churn prediction. 
+Is there any tool as good as machine learning for prediction? I don’t think so. 
+I don’t consider new customers acquired during the selected period of time.
+This is a classification problem, and I chose to model the churn prediction problem as a standard binary classification task, labelling each customer as “churner” or “non-churner”.
+
+## Import the packages
+
+Now let's pass to the practical part. First of all I import the packages I need
+
+```{r packages, echo = FALSE}
+library(rattle)
+library(caret)
+library(rpart)
+library(randomForest)
+library(C50)
+library(dplyr)
+library(ggplot2)
+library(readr)
+library(mlbench)
+library(gmodels)
+library(e1071)
+library(Cubist)
+```
+
+## Import the dataset
+
+The dataset has 10k observations and 14 columns. The response variable is exited, 0 means the customer has stayed, 1 means the customer’s left. This is not a real dataset. 
+I’ve taken it from Kaggle. I don’t think Kaggle needs any presentation. The dataset is already cleaned and ready to be used, that’s why I didnt do a deep data cleansing nor feature engineering. By looking at some variables, such as ‘balance’ and ‘isactivemember’ I thought that even customers with a very low balance and inactive can be seen as churners. But in the end I opted for considering just the variable exited. 
+
+```{r dataset}
+churn <- read_delim('Churn_Modelling.csv', delim = ',', col_types = cols(
+  RowNumber = col_integer(),
+  CustomerId = col_integer(),
+  Surname = col_character(),
+  CreditScore = col_integer(),
+  Geography = col_character(),
+  Gender = col_character(),
+  Age = col_integer(),
+  Tenure = col_integer(),
+  Balance = col_double(),
+  NumOfProducts = col_integer(),
+  HasCrCard = col_integer(),
+  IsActiveMember = col_integer(),
+  EstimatedSalary = col_double(),
+  Exited = col_integer()
+))
+
+head(churn)
+```
+
+## Exploration Phase
+
+Now I want to see the differences in average score considering all the categorical variables.
+
+```{r exploring }
+# Not huge differences in credit score among geographic zones
+churn %>% 
+  group_by(Geography) %>% 
+  summarise(n = n(),
+            avg_credit_score = mean(CreditScore),
+            sd_credit_score = sd(CreditScore))
+# Those who didnt exit tend to have a higher credit score
+churn %>% 
+  group_by(Exited) %>% 
+  summarise(n = n(),
+            avg_credit_score = mean(CreditScore),
+            sd_credit_score = sd(CreditScore))
+# Doesn't seem to have an impact the number of products held by a customer
+churn %>% 
+  group_by(NumOfProducts) %>%
+  summarise(n = n(),
+            avg_credit_score = mean(CreditScore),
+            sd_credit_score = sd(CreditScore))
+# Credit score is roughly the same between Gender
+churn %>% 
+  group_by(Gender) %>% 
+  summarise(n = n(),
+            avg_credit_score = mean(CreditScore),
+            sd_credit_score = sd(CreditScore))
+# Active members tend to have a higher score.
+churn %>% 
+  group_by(IsActiveMember) %>%
+  summarise(n = n(),
+           avg_credit_score = mean(CreditScore),
+           sd_credit_score = sd(CreditScore))
+#Customers with a credit card have a slightly higher credit score, on average
+churn %>%
+  group_by(HasCrCard) %>% 
+  summarise(n = n(),
+  avg_credit_score = mean(CreditScore),
+  sd_credit_score = sd(CreditScore))
+
+
+```
+
+### Missing values
+
+I want to verify if there are missing values. There aren't.
+
+```{r missing values}
+sum(is.na(churn))
+```
+
+## Some plot
+
+I want to see graphically id there are important differences in credit score and in estimated salary between people who exited and people who don't. Apparently there are no important differences
+
+```{r plot}
+churn %>% ggplot(aes(factor(Exited), CreditScore)) + 
+  geom_boxplot(color = 'blue', outlier.colour = 'red', notch = TRUE, notchwidth = 0.1)
+
+churn %>% ggplot(aes(factor(Exited), EstimatedSalary)) + 
+  geom_boxplot(color = 'blue', outlier.colour = 'red', notch = TRUE, notchwidth = 0.1)
+
+```
+
+## Statistical tests
+
+I want to perform some t-test to see if the difference in credit score, balance and EstimatedSalary (between guys who exited and guys who did not) is significative. 
+The difference is very likely to be different from zero just in terms of balance and creditscore but not for estimated salary.
+
+```{r t-test}
+t.test(CreditScore ~ Exited, churn)
+t.test(Balance ~ Exited, churn)
+t.test(EstimatedSalary ~ Exited, churn)
+```
+
+<!-- ## Feature importance -->
+
+<!-- The first model I want to build will be ranking the features by their importance. We can see that Age is the most important variables, followed by IsActiveMember, Geography and NumOfProducts. -->
+
+<!-- ```{r importance} -->
+<!-- set.seed(12345) -->
+<!-- churn <- as.data.frame(churn) -->
+<!-- control <- trainControl(method = 'repeatedcv', number = 10, repeats = 3) -->
+<!-- model <- train(factor(Exited) ~ ., data = churn, method = 'lvq', trControl = control) -->
+<!-- importance <- varImp(model, scale = FALSE) -->
+<!-- plot(importance) -->
+<!-- ``` -->
+
+## Data Preprocessing
+
+Now i want to turn into numerical dummies the categorical features, such as Geography and Gender
+
+```{r preprocessing}
+
+churn$Geography <- factor(churn$Geography,
+                          levels = c('France', 'Spain', 'Germany'),
+                          labels = c(1,2,3))
+
+churn$Gender <- factor(churn$Gender,
+                          levels = c('Female', 'Male'),
+                          labels = c(0,1))
+
+```
+
+### Split the dataset
+
+Now I split the dataset in train and test, with a 75:25 proportion. Then, I label the response variable.
+
+```{r split the dataset}
+churn <- churn[,4:14]
+churn_train <- churn %>% sample_frac(0.75)
+churn_test <- churn %>% anti_join(churn_train)
+churn$Exited <- factor(churn$Exited, levels = c(0,1), labels = c('FALSE', 'TRUE'))
+churn_train$Exited <- factor(churn_train$Exited, levels = c(0,1), labels = c('FALSE', 'TRUE'))
+churn_test$Exited <- factor(churn_test$Exited, levels = c(0,1), labels = c('FALSE', 'TRUE'))
+```
+# Machine Learning
+
+Now it's time to build some machine learning model to try to help with some insights the company. 
+First of all, as it is a binary problem, we have to consider the type of errors related to the business problem.
+
+FALSE NEGATIVE COST: COST OF INCORRECTLY IDENTIFYING A CUSTOMER AS HIGH RISK OF SWITCHING (wasted marketing cost) →  churners as non churners
+FALSE POSITIVE COST: COST OF FAILING TO IDENTIFY A HIGH RISK CUSTOMER (LOST REVENUE). → non churners as churners (more costly)
+
+Said that, we can start by creating our models.
+
+## Logistic regression
+
+Logistic regression is the appropriate regression analysis to conduct when the dependent variable is dichotomous (binary) as it is in this case. First I fit the model with train data using glm function, then I predict the test data. I build a confusion matrix setting the threshold at 0.5, meaning that all the values below 0.5 are considered to be FALSE and viceversa all the values above 0.5 are considered to be TRUE.
+
+In this case FALSE can be misleading because represents the customers who don't leave the company.
+
+This model has an accuracy of 0.80. Not bad, but I guess we can do better.
+
+```{r logit}
+set.seed(12345)
+mod1 <- glm(Exited ~ ., data = churn_train, family = binomial())
+summary(mod1)
+
+pr1 <- predict(mod1, type = 'response', newdata = churn_test)
+
+response_hat_insample <- pr1 > 0.5 ## Predict 1 if pr1>0.5
+cm  <- confusionMatrix(factor(response_hat_insample), factor(churn_test$Exited))
+cm
+```
+
+## Decision tree
+
+The next model I'm going to build is a decision tree. In this case this model could be very useful also to double check the feature importance model I've built before. 
+We got a better accuracy than logit. The main drawback of a decision tree is the overfitting problem. So the next natural step is to build a random forest.
+
+The fancyRpartplot is very insightful in my opinion. It allows to visually and explicitly represent decisions and decision making. In this case we can spot which are the 'clusters' more prone to leave. 
+For example, we can see that people ranging from 51 years old and 45 are the ones who have a higher probability to leave.
+
+```{r decision tree}
+set.seed(12345)
+mod2 <- rpart(factor(Exited) ~., data = churn_train)
+
+pr2 <- predict(mod2, newdata = churn_test[-11], type = 'class')
+summary(pr2)
+
+cm2  <- confusionMatrix(pr2, factor(churn_test$Exited))
+
+fancyRpartPlot(mod2, palettes = c('Reds'))
+
+```
+
+## Random forest
+
+The random forest model is an ensemble technique focused just on decision trees. 
+After the ensemble of trees (the forest) is generated, the model uses a vote to combine the trees' predictions.
+It allows to overcome the overfitting problem mentioned before. I use 200 trees for building the model.
+
+```{r randomforest}
+set.seed(12345)
+mod3 <- randomForest(Exited ~., data = churn_train, ntree = 200)
+
+pr3 <- predict(mod3, newdata = churn_test[-11])
+summary(pr3)
+
+cm3  <- confusionMatrix(pr3, factor(churn_test$Exited))
+cm3
+```
+
+## Boosting
+
+Finally I want to use the boosting. This technique boosts the performance of weak learners to attain the performance of stronger learners.
+Boosting uses ensembles of models trained of resampled data and a vote to determine the final prediction.
+I will be using C5.0 algorithm, a very powerful one. It allows us to assign a penalty to different types of errors, in order to discourage a tree from making more costly mistakes. 
+The penalties are designated in a cost matrix, which specifies how much costlier each error is, relative to any other prediction.
+
+
+```{r boosting}
+set.seed(123)
+churn_train$Geography <- as.integer(churn_train$Geography)
+churn_train$Gender <- as.integer(churn_train$Gender)
+churn_test$Geography <- as.integer(churn_test$Geography)
+churn_test$Gender <- as.integer(churn_test$Gender)
+matrix_dimensions <- list(c('FALSE', 'TRUE'), c('FALSE', 'TRUE'))
+names(matrix_dimensions) <- c('predicted', 'actual')
+error_cost <- matrix(c(0,4,1,0), ncol = 2, dimnames = matrix_dimensions)
+churn_cost <- C5.0(churn_train[-11], churn_train$Exited, costs = error_cost)
+churn_cost_pred <- predict(churn_cost,churn_test[-11])
+cm4 <- confusionMatrix(factor(churn_cost_pred), churn_test$Exited)
+cm4
+```
+
+
+# CONCLUSIONS
+
+So the objective of my project was to predict in advance which customers are likely to leave a bank with quite good precision, avoiding costs related to false positive errors (non churners classified as churners).
+
+The ability to execute upon an insight, the so called actionability, is nearly always the most important metric to judge model success. Model exists to help us create more desiderable outcomes, that is to maximise profitability. For a problem like that, I think that the C50 algorithm is one of the best in terms of actionability even if a random forest model is better in term of accuracy.
+
+For the business is better to avoid lost revenues than waste marketing costs. In machine learning terms, we aim at a greater sensitivity even if this means a lower specificity and accuracy.
+
+I think that further development in the field must be done by considering the temporal characteristic, which increases the overall analysis complexity. Data mining and machine Learning tools can definitely help bank to understand their customers’ behavior, confirming that further studies may be worth considering.
+
+Age and number of products are the most relevant features. We can say that younger clients which have between 2 and 4 products are more prone to exit the bank. This can mean that these people are attracted by new products. Thanks to Machine Learning we are able to predict it and we are able to tackle the problem by proposing and release new type of products. I think is very powerful but at the same time simple the last algorithm I have used because in the real world, and in this case as well, the error is not symmetric. 
+
+Possible solutions:
+
+- Use the retained earning to do some strategical acquisitions. Acquire those fintech startups who have a specific know-how and offer those kind of products that attract the segment we noticed left the company with a higher probability, allows the bank to tackle this problem and to conceal this high churn rate
+
+- Another solution is to improve the customer relationship management system by asking for some consultancy (e.g. salesforce) and try to win the competition represented mainly by fintech startups.
